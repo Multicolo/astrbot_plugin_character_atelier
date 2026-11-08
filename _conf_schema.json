@@ -1,0 +1,283 @@
+{
+  "enabled": {
+    "description": "启用角色画室",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后 /画、LLM 工具和定时日程图都不会生成图片。"
+  },
+  "providers_json": {
+    "description": "服务商列表（JSON）",
+    "type": "string",
+    "default": "[]",
+    "hint": "填一个 JSON 数组，每个服务商一个对象。type 支持 dashscope（阿里云百炼千问）、openai（OpenAI 兼容接口）、gemini（Google）。示例：[{\"name\":\"qwen\",\"type\":\"dashscope\",\"api_key\":\"sk-xxx\",\"model\":\"qwen-image-2.1-turbo\"},{\"name\":\"openai\",\"type\":\"openai\",\"api_key\":\"sk-xxx\",\"model\":\"gpt-image-1\",\"size_map\":{\"1024*1024\":\"1024x1024\"}},{\"name\":\"gemini\",\"type\":\"gemini\",\"api_key\":\"AIza...\",\"model\":\"gemini-2.5-flash-image\"}]。留空或 [] 时使用下面的单服务商旧配置。"
+  },
+  "active_provider": {
+    "description": "默认服务商名称",
+    "type": "string",
+    "default": "",
+    "hint": "对应 providers_json 里的 name；留空使用列表第一个。"
+  },
+  "provider_fallback": {
+    "description": "失败时自动换下一个服务商",
+    "type": "bool",
+    "default": true,
+    "hint": "按 providers_json 的顺序依次尝试；关闭后只用默认服务商。"
+  },
+  "provider_type": {
+    "description": "旧配置：服务商类型",
+    "type": "string",
+    "default": "dashscope",
+    "hint": "仅在 providers_json 为空时生效。可选 dashscope、openai、gemini。"
+  },
+  "api_key": {
+    "description": "旧配置：API Key",
+    "type": "string",
+    "default": "",
+    "hint": "仅在 providers_json 为空时生效。DashScope 可留空，自动读取 AstrBot 模型配置里的 dashscope key。"
+  },
+  "api_base": {
+    "description": "旧配置：API 地址",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用所选类型的默认地址。DashScope 默认 https://dashscope.aliyuncs.com/api/v1。"
+  },
+  "model": {
+    "description": "旧配置：模型名",
+    "type": "string",
+    "default": "qwen-image-2.1-turbo",
+    "hint": "仅在 providers_json 为空时生效。"
+  },
+  "provider_name": {
+    "description": "旧配置：服务商名称",
+    "type": "string",
+    "default": "default"
+  },
+  "cmd_config_path": {
+    "description": "AstrBot 主配置文件路径",
+    "type": "string",
+    "default": "/AstrBot/data/cmd_config.json",
+    "hint": "DashScope 的 api_key 留空时，从这里找现成的 dashscope key。"
+  },
+  "send_negative_prompt": {
+    "description": "旧配置：发送负面提示词",
+    "type": "bool",
+    "default": false,
+    "hint": "仅部分 OpenAI 兼容服务支持 negative_prompt；qwen 原生通道会自动使用。"
+  },
+  "response_format": {
+    "description": "旧配置：OpenAI 返回格式",
+    "type": "string",
+    "default": "",
+    "hint": "可填 url 或 b64_json；留空交给服务商默认。"
+  },
+  "default_size": {
+    "description": "默认尺寸",
+    "type": "string",
+    "default": "1024*1024",
+    "hint": "格式 宽*高，例如 1024*1024、768*1024、1024*768。部分服务商只支持固定尺寸时，用服务商自己的 size_map 转换。"
+  },
+  "style_prompt": {
+    "description": "默认画风",
+    "type": "string",
+    "default": "温暖可爱的插画风格，柔和光线，细腻笔触",
+    "hint": "会追加到每次聊天生图的描述后面；用户在指令里用 --style 可覆盖。"
+  },
+  "negative_prompt": {
+    "description": "负面提示词",
+    "type": "string",
+    "default": "",
+    "hint": "例如 低清晰度、畸形、多余手指；留空不传。"
+  },
+  "watermark": {
+    "description": "添加水印",
+    "type": "bool",
+    "default": false,
+    "hint": "仅部分服务商支持。"
+  },
+  "prompt_extend": {
+    "description": "启用提示词扩写",
+    "type": "bool",
+    "default": false,
+    "hint": "仅千问原生通道支持；不支持时自动退回基础参数。"
+  },
+  "enable_thinking": {
+    "description": "启用思考模式",
+    "type": "bool",
+    "default": false,
+    "hint": "仅部分 qwen-image-3 模型支持，开启后更慢。"
+  },
+  "timeout": {
+    "description": "单张生图超时（秒）",
+    "type": "int",
+    "default": 180
+  },
+  "poll_interval": {
+    "description": "异步任务轮询间隔（秒）",
+    "type": "float",
+    "default": 2.0
+  },
+  "request_timeout": {
+    "description": "单次 HTTP 请求超时（秒）",
+    "type": "float",
+    "default": 60.0
+  },
+  "max_prompt_chars": {
+    "description": "提示词最大长度",
+    "type": "int",
+    "default": 800
+  },
+  "max_concurrency": {
+    "description": "同时生图上限",
+    "type": "int",
+    "default": 2
+  },
+  "cooldown_seconds": {
+    "description": "同一用户冷却时间（秒）",
+    "type": "int",
+    "default": 8,
+    "hint": "填 0 关闭冷却。"
+  },
+  "max_images_keep": {
+    "description": "本地缓存图片上限",
+    "type": "int",
+    "default": 200,
+    "hint": "超过后自动删除最旧的图片。"
+  },
+  "show_provider": {
+    "description": "在图片配文里显示服务商",
+    "type": "bool",
+    "default": false,
+    "hint": "调试多服务商时打开，确认实际用了哪家。"
+  },
+  "send_progress_hint": {
+    "description": "生成前先发进度提示",
+    "type": "bool",
+    "default": true
+  },
+  "progress_hint": {
+    "description": "聊天生图进度提示语",
+    "type": "string",
+    "default": "好，开始画了，等我一下…"
+  },
+  "caption": {
+    "description": "聊天生图配文",
+    "type": "string",
+    "default": "画好啦，看看这张怎么样～"
+  },
+  "schedule_enabled": {
+    "description": "启用每日日程生图",
+    "type": "bool",
+    "default": true
+  },
+  "schedule_time": {
+    "description": "每日日程生图时间",
+    "type": "string",
+    "default": "08:30",
+    "hint": "24 小时制 HH:MM。若同时用 virtual_life，建议排在其生成日程（默认 00:00）之后。"
+  },
+  "schedule_timezone": {
+    "description": "日程生图时区",
+    "type": "string",
+    "default": "Asia/Shanghai"
+  },
+  "schedule_sessions": {
+    "description": "日程图推送会话",
+    "type": "string",
+    "default": "",
+    "hint": "多个会话用逗号/换行分隔，格式如 qq-onebot:FriendMessage:123456；留空则用最近一次生图会话。"
+  },
+  "schedule_persona_name": {
+    "description": "日程图人格名",
+    "type": "string",
+    "default": "助手",
+    "hint": "用来匹配 virtual_life plans.json 里的 日期::人格 键；不用 virtual_life 可随便填。"
+  },
+  "schedule_use_virtual_life": {
+    "description": "读取 virtual_life 日程",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后从 plans.json 取当天的主题、心情、穿搭和日程片段来组成提示词。"
+  },
+  "virtual_life_plans_path": {
+    "description": "virtual_life 数据路径",
+    "type": "string",
+    "default": "/AstrBot/data/plugin_data/astrbot_plugin_virtual_life/plans.json"
+  },
+  "schedule_provider": {
+    "description": "日程图指定服务商",
+    "type": "string",
+    "default": "",
+    "hint": "填 providers_json 里的 name；留空使用默认服务商。"
+  },
+  "schedule_prompt_template": {
+    "description": "日程图提示词模板",
+    "type": "string",
+    "default": "今天是 {date}（{weekday}）。请画一张「{persona_name}」的今日日程插画：主题是{theme}，心情{mood}，{outfit}。今天的片段：{timeline}。画面像一张温暖的生活插画，主体严格保持角色三视图中的脸型、发型、配色和服装，不要换成其他角色；场景与日程呼应，构图完整，光线柔和，细节丰富。",
+    "hint": "可用占位符：{date} {weekday} {persona_name} {theme} {mood} {outfit} {timeline}。"
+  },
+  "schedule_style_prompt": {
+    "description": "日程图画风",
+    "type": "string",
+    "default": "温暖可爱的二次元生活插画，柔和自然光，细腻笔触，构图完整"
+  },
+  "schedule_caption": {
+    "description": "日程图配文",
+    "type": "string",
+    "default": "今日份日程图：{date} {theme}｜{mood}\n{persona_name}把今天画给你看啦。",
+    "hint": "可用占位符同 schedule_prompt_template。"
+  },
+  "schedule_size": {
+    "description": "日程图尺寸",
+    "type": "string",
+    "default": "1024*1024"
+  },
+  "schedule_progress_hint": {
+    "description": "日程图进度提示语",
+    "type": "string",
+    "default": "我去翻翻今天的日程，画张图给你…"
+  },
+  "schedule_catch_up": {
+    "description": "启动时补发当天日程图",
+    "type": "bool",
+    "default": true,
+    "hint": "如果插件在当天日程时间之后启动，且还在补发窗口内，会立刻补一张。"
+  },
+  "schedule_catch_up_window_hours": {
+    "description": "补发窗口（小时）",
+    "type": "float",
+    "default": 3.0
+  },
+  "proactive_size": {
+    "description": "主动画图尺寸",
+    "type": "string",
+    "default": "1024*1024"
+  },
+  "proactive_style_prompt": {
+    "description": "主动画图画风",
+    "type": "string",
+    "default": "像一张随手拍的生活照片，自然光，轻微颗粒感，真实生活氛围"
+  },
+  "proactive_provider": {
+    "description": "主动画图指定服务商",
+    "type": "string",
+    "default": "",
+    "hint": "填 providers_json 里的 name；留空使用默认服务商。"
+  },
+  "proactive_caption": {
+    "description": "主动画图配文",
+    "type": "string",
+    "default": "突然想给你看看这个——"
+  },
+  "llm_guide_enabled": {
+    "description": "把生图用法注入系统提示",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后角色会知道什么时候调用生图工具、有哪些服务商；会占用少量上下文。"
+  },
+  "llm_guide_text": {
+    "description": "生图用法提示词",
+    "type": "string",
+    "default": "【生图工具使用说明】\n你可以调用工具直接生成图片并发送给用户，不要说自己不能画图。\n- {tool_draw}：用户想画图、要头像/插画/表情包/场景图、说“画一张/生图/来张图”时调用。\n- {tool_schedule}：用户想看今天的日程图、今日安排插画、把今天计划画出来时调用。\n当前可用服务商：{providers}。默认尺寸 {default_size}。\n调用要点：\n1. prompt 写清主体、动作、场景、光线、构图和风格，不要写“帮我画”这类空话。\n2. size 可选，格式如 1024*1024、768*1024、1024*768；不确定就留空。\n3. provider 可选，只有用户点名服务商时才填；不确定就留空。\n4. 工具会把图直接发给用户，你只需用一两句话回应，不要重复描述画面。\n5. 工具失败时，把简短原因告诉用户，并建议换个描述或稍后再试。",
+    "hint": "可用占位符：{providers} {default_size} {tool_draw} {tool_schedule}。留空则不注入。"
+  }
+}
