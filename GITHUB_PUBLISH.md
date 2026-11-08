@@ -15,7 +15,7 @@
 1. 在 GitHub 新建空仓库，**不要**勾选 “Add a README file”。
 2. 打开空仓库页面，点击 **uploading an existing file**。
 3. 把本目录里的全部文件拖进去（保留 `views/character/` 目录结构）。
-4. 提交信息填 `初始提交：角色画室插件 v2.3.0`，点击 **Commit changes**。
+4. 提交信息填 `初始提交：角色画室插件 v2.4.0`，点击 **Commit changes**。
 5. 进入仓库 **Settings → General**，把仓库描述和 Topics 填上。
 6. 把仓库地址填到 `metadata.yaml` 的 `repo` 字段，再提交一次：
 
@@ -31,7 +31,7 @@
 cd astrbot_plugin_character_atelier
 git init
 git add .
-git commit -m "初始提交：角色画室插件 v2.3.0"
+git commit -m "初始提交：角色画室插件 v2.4.0"
 git branch -M main
 git remote add origin https://github.com/<你的用户名>/astrbot_plugin_character_atelier.git
 git push -u origin main
@@ -56,11 +56,11 @@ git push -u origin main
 ## 5. 可选：打一个 Release
 
 ```bash
-git tag v2.3.0
-git push origin v2.3.0
+git tag v2.4.0
+git push origin v2.4.0
 ```
 
-然后在 GitHub 的 **Releases → Draft a new release** 里选择 `v2.3.0`，上传 `角色画室_astrbot_plugin_character_atelier.zip`。AstrBot 插件市场或手动安装都可以直接用这个 zip。
+然后在 GitHub 的 **Releases → Draft a new release** 里选择 `v2.4.0`，上传 `角色画室_astrbot_plugin_character_atelier.zip`。AstrBot 插件市场或手动安装都可以直接用这个 zip。
 
 ## 6. 说明
 

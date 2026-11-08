@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import mimetypes
 import os
@@ -13,6 +14,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import AsyncGenerator
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from astrbot.api import logger
@@ -69,8 +71,8 @@ SIZE_PRESETS = {
 @register(
     PLUGIN_NAME,
     "花影落闲庭",
-    "角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口与 Gemini，提供 LLM 工具、/画 指令、每日日程插画、主动画图与角色三视图（支持整图自动切分）。",
-    "v2.3.0",
+    "角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口与 Gemini，提供 LLM 工具、/画 指令、每日日程插画、主动画图与按人设绑定的角色三视图（支持整图自动切分）。",
+    "v2.4.0",
 )
 class CharacterAtelierPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None) -> None:
@@ -155,6 +157,7 @@ class CharacterAtelierPlugin(Star):
     # ------------------------------------------------------------------ character
     CHARACTER_SLOTS = ("front", "side", "back")
     CHARACTER_DEFAULT = {
+        "persona_id": "",
         "name": "",
         "description": "",
         "slots": {},
@@ -166,40 +169,87 @@ class CharacterAtelierPlugin(Star):
         "proactive_scenes": [],
     }
 
-    def _read_character(self) -> dict:
-        data = dict(self.CHARACTER_DEFAULT)
+    @staticmethod
+    def _safe_persona_key(persona_id: str) -> str:
+        text = str(persona_id or "").strip()
+        if not text or text == "default":
+            return "default"
+        slug = re.sub(r"[^0-9A-Za-z_-]+", "_", text).strip("_")[:40] or "persona"
+        digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
+        return f"{slug}-{digest}"
+
+    def _persona_dir(self, persona_id: str | None = None) -> Path:
+        text = str(persona_id or "").strip()
+        if not text or text == "default":
+            return self._character_dir
+        path = self._character_dir / "personas" / self._safe_persona_key(text)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _profile_path(self, persona_id: str | None = None) -> Path:
+        return self._persona_dir(persona_id) / "profile.json"
+
+    def _read_profile_file(self, path: Path) -> dict | None:
         try:
-            raw = json.loads(self._character_path.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                data.update(raw)
+            raw = json.loads(path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
-            pass
+            return None
+        return raw if isinstance(raw, dict) else None
+
+    def _legacy_profile(self) -> dict:
+        raw = self._read_profile_file(self._character_path)
+        return raw if isinstance(raw, dict) else {}
+
+    def _read_character(self, persona_id: str | None = None) -> dict:
+        text = str(persona_id or "").strip() or "default"
+        data = dict(self.CHARACTER_DEFAULT)
+        path = self._profile_path(text)
+        raw = self._read_profile_file(path) if path.is_file() else None
+
+        # 老版本只有 character/profile.json；如果它的角色名正好等于当前人设，
+        # 自动复制一份到该人设目录，避免升级后旧角色“消失”。
+        if raw is None and text != "default":
+            legacy = self._legacy_profile()
+            if str(legacy.get("name") or "").strip() == text:
+                raw = dict(legacy)
+                self._write_character(raw, text)
+                path = self._profile_path(text)
+
+        if raw:
+            data.update(raw)
+        data["persona_id"] = text
         if not isinstance(data.get("slots"), dict):
             data["slots"] = {}
         return data
 
-    def _write_character(self, data: dict) -> None:
-        self._character_dir.mkdir(parents=True, exist_ok=True)
-        tmp = self._character_path.with_suffix(".tmp")
+    def _write_character(self, data: dict, persona_id: str | None = None) -> None:
+        text = str(persona_id or "").strip() or "default"
+        if text != "default":
+            data["persona_id"] = text
+        path = self._profile_path(text)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
         tmp.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        tmp.replace(self._character_path)
+        tmp.replace(path)
 
-    def _character_image_path(self, slot: str) -> Path | None:
+    def _character_image_path(
+        self, slot: str, persona_id: str | None = None
+    ) -> Path | None:
         if slot not in self.CHARACTER_SLOTS:
             return None
-        profile = self._read_character()
+        profile = self._read_character(persona_id)
         filename = str((profile.get("slots") or {}).get(slot) or "")
         if not filename:
             return None
-        path = self._character_dir / Path(filename).name
+        path = self._persona_dir(persona_id) / Path(filename).name
         return path if path.is_file() else None
 
-    def _character_refs(self) -> list[str]:
+    def _character_refs(self, persona_id: str | None = None) -> list[str]:
         refs: list[str] = []
         for slot in self.CHARACTER_SLOTS:
-            path = self._character_image_path(slot)
+            path = self._character_image_path(slot, persona_id)
             if not path:
                 continue
             mime = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -207,8 +257,8 @@ class CharacterAtelierPlugin(Star):
             refs.append(f"data:{mime};base64,{encoded}")
         return refs
 
-    def _character_prompt(self) -> str:
-        profile = self._read_character()
+    def _character_prompt(self, persona_id: str | None = None) -> str:
+        profile = self._read_character(persona_id)
         name = str(profile.get("name") or "").strip()
         desc = str(profile.get("description") or "").strip()
         if not name and not desc:
@@ -219,17 +269,128 @@ class CharacterAtelierPlugin(Star):
         text += "。严格保持角色三视图中的脸型、发型/头身、配色和服装特征，不要换角色。"
         return text
 
-    def _character_state(self) -> dict:
-        profile = self._read_character()
+    def _character_state(self, persona_id: str | None = None) -> dict:
+        text = str(persona_id or "").strip() or "default"
+        profile = self._read_character(text)
         images: dict[str, str] = {}
         for slot in self.CHARACTER_SLOTS:
-            path = self._character_image_path(slot)
+            path = self._character_image_path(slot, text)
             if path:
-                images[slot] = (
+                base = (
                     f"/api/v1/plugins/extensions/{PLUGIN_NAME}/character/image/"
                     f"{slot}?v={int(path.stat().st_mtime)}"
                 )
-        return {"profile": profile, "images": images}
+                if text != "default":
+                    base += f"&persona={quote(text, safe='')}"
+                images[slot] = base
+        return {"profile": profile, "images": images, "persona_id": text}
+
+    def _profile_has_images(self, persona_id: str) -> bool:
+        return any(
+            self._character_image_path(slot, persona_id)
+            for slot in self.CHARACTER_SLOTS
+        )
+
+    async def _persona_catalog(self) -> list[dict]:
+        items: list[dict] = []
+        seen: set[str] = set()
+
+        def add(persona_id: str, label: str = "", prompt: str = "") -> None:
+            pid = str(persona_id or "").strip()
+            if not pid or pid in seen:
+                return
+            seen.add(pid)
+            profile = self._read_character(pid)
+            items.append(
+                {
+                    "id": pid,
+                    "label": label or pid,
+                    "prompt": prompt[:160],
+                    "name": str(profile.get("name") or "").strip(),
+                    "has_profile": self._profile_path(pid).is_file()
+                    or bool(profile.get("name") or profile.get("description")),
+                    "has_images": self._profile_has_images(pid),
+                }
+            )
+
+        mgr = getattr(self.context, "persona_manager", None)
+        if mgr is not None:
+            try:
+                personas = await mgr.get_all_personas()
+                for persona in personas:
+                    pid = str(getattr(persona, "persona_id", "") or "").strip()
+                    prompt = str(getattr(persona, "system_prompt", "") or "")
+                    add(pid, pid, prompt)
+            except Exception:  # noqa: BLE001
+                logger.debug("读取 AstrBot 人设列表失败", exc_info=True)
+
+        add("default", "默认（不绑定人设）")
+        try:
+            for path in sorted((self._character_dir / "personas").glob("*/profile.json")):
+                raw = self._read_profile_file(path)
+                if raw:
+                    add(str(raw.get("persona_id") or "").strip())
+        except Exception:  # noqa: BLE001
+            pass
+
+        items.sort(key=lambda item: (item["id"] != "default", item["label"]))
+        return items
+
+    async def _resolve_persona_id(self, event: AstrMessageEvent | None = None) -> str:
+        if event is not None:
+            try:
+                traced = event.get_extra("_trace_persona_id")
+                if traced:
+                    return str(traced)
+            except Exception:  # noqa: BLE001
+                pass
+        if event is None:
+            return "default"
+        try:
+            cm = getattr(self.context, "conversation_manager", None)
+            conversation_persona_id = None
+            if cm is not None:
+                umo = event.unified_msg_origin
+                cid = await cm.get_curr_conversation_id(umo)
+                if cid:
+                    conversation = await cm.get_conversation(umo, cid)
+                    if conversation is not None:
+                        conversation_persona_id = getattr(
+                            conversation, "persona_id", None
+                        )
+            mgr = getattr(self.context, "persona_manager", None)
+            if mgr is not None:
+                persona_id, _, _, _ = await mgr.resolve_selected_persona(
+                    umo=event.unified_msg_origin,
+                    conversation_persona_id=conversation_persona_id,
+                    platform_name=event.get_platform_name(),
+                )
+                if persona_id:
+                    return str(persona_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("解析当前会话人设失败", exc_info=True)
+        return "default"
+
+    def _schedule_persona_id(self) -> str:
+        raw = str(self._cfg("schedule_persona_name", "") or "").strip()
+        return raw or "default"
+
+    async def _request_persona_id(self, payload: dict | None = None) -> str:
+        pid = ""
+        if isinstance(payload, dict):
+            pid = str(payload.get("persona") or payload.get("persona_id") or "").strip()
+        if not pid:
+            try:
+                pid = str(request.query.get("persona", "") or "").strip()
+            except Exception:  # noqa: BLE001
+                pid = ""
+        if not pid:
+            try:
+                form = await request.form()
+                pid = str(form.get("persona", "") or "").strip()
+            except Exception:  # noqa: BLE001
+                pid = ""
+        return pid or "default"
 
     def _register_web_apis(self) -> None:
         reg = getattr(self.context, "register_web_api", None)
@@ -247,6 +408,12 @@ class CharacterAtelierPlugin(Star):
             self.api_character_save,
             ["POST"],
             "角色视图：保存角色设定",
+        )
+        reg(
+            f"/{PLUGIN_NAME}/character/personas",
+            self.api_character_personas,
+            ["GET"],
+            "角色视图：读取 AstrBot 人设列表",
         )
         reg(
             f"/{PLUGIN_NAME}/character/sheet",
@@ -280,13 +447,32 @@ class CharacterAtelierPlugin(Star):
         )
 
     async def api_character_get(self, **kwargs):
-        return json_response({"ok": True, **self._character_state()})
+        persona_id = await self._request_persona_id()
+        return json_response(
+            {
+                "ok": True,
+                "persona_id": persona_id,
+                "personas": await self._persona_catalog(),
+                **self._character_state(persona_id),
+            }
+        )
+
+    async def api_character_personas(self, **kwargs):
+        persona_id = await self._request_persona_id()
+        return json_response(
+            {
+                "ok": True,
+                "persona_id": persona_id,
+                "personas": await self._persona_catalog(),
+            }
+        )
 
     async def api_character_save(self, **kwargs):
         payload = await request.json({})
         if not isinstance(payload, dict):
             return error_response("请求体必须是 JSON 对象")
-        profile = self._read_character()
+        persona_id = await self._request_persona_id(payload)
+        profile = self._read_character(persona_id)
         for key in ("name", "description"):
             if key in payload:
                 profile[key] = str(payload[key] or "").strip()[:2000]
@@ -311,11 +497,19 @@ class CharacterAtelierPlugin(Star):
             profile["proactive_scenes"] = [
                 str(item).strip()[:300] for item in scenes if str(item).strip()
             ][:20]
-        self._write_character(profile)
-        return json_response({"ok": True, **self._character_state()})
+        self._write_character(profile, persona_id)
+        return json_response(
+            {
+                "ok": True,
+                "persona_id": persona_id,
+                "personas": await self._persona_catalog(),
+                **self._character_state(persona_id),
+            }
+        )
 
     async def api_character_sheet(self, **kwargs):
         """接收一张总览图，自动切成正面 / 侧面 / 背面三张参考图。"""
+        persona_id = await self._request_persona_id()
         files = await request.files()
         upload = files.get("file") if files else None
         if upload is None:
@@ -323,7 +517,8 @@ class CharacterAtelierPlugin(Star):
         mime = str(getattr(upload, "content_type", "") or "").lower()
         if mime not in {"image/png", "image/jpeg", "image/webp"}:
             return error_response("只支持 PNG / JPG / WebP 图片")
-        tmp = self._character_dir / f".sheet_{uuid.uuid4().hex}"
+        target = self._persona_dir(persona_id)
+        tmp = target / f".sheet_{uuid.uuid4().hex}"
         try:
             await upload.save(tmp, max_bytes=12 * 1024 * 1024)
             if tmp.stat().st_size < 256:
@@ -333,15 +528,22 @@ class CharacterAtelierPlugin(Star):
                 crops = split_character_sheet(raw)
             except SheetSplitError as exc:
                 return error_response(str(exc))
-            (self._character_dir / "sheet.png").write_bytes(raw)
-            profile = self._read_character()
+            (target / "sheet.png").write_bytes(raw)
+            profile = self._read_character(persona_id)
             slots = profile.setdefault("slots", {})
             for slot, data in crops.items():
-                dest = self._character_dir / f"{slot}.png"
+                dest = target / f"{slot}.png"
                 dest.write_bytes(data)
                 slots[slot] = dest.name
-            self._write_character(profile)
-            return json_response({"ok": True, **self._character_state()})
+            self._write_character(profile, persona_id)
+            return json_response(
+                {
+                    "ok": True,
+                    "persona_id": persona_id,
+                    "personas": await self._persona_catalog(),
+                    **self._character_state(persona_id),
+                }
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("自动切分角色三视图失败：%s", exc)
             return error_response("自动切分失败，请换一张背景更干净、三个角色并排的图")
@@ -352,6 +554,7 @@ class CharacterAtelierPlugin(Star):
                 pass
 
     async def api_character_upload(self, slot: str = "", **kwargs):
+        persona_id = await self._request_persona_id()
         files = await request.files()
         upload = files.get("file") if files else None
         if upload is None:
@@ -363,8 +566,9 @@ class CharacterAtelierPlugin(Star):
         if mime not in {"image/png", "image/jpeg", "image/webp"}:
             return error_response("只支持 PNG / JPG / WebP 图片")
         suffix = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}[mime]
-        dest = self._character_dir / f"{slot}{suffix}"
-        tmp = self._character_dir / f".upload_{uuid.uuid4().hex}"
+        target = self._persona_dir(persona_id)
+        dest = target / f"{slot}{suffix}"
+        tmp = target / f".upload_{uuid.uuid4().hex}"
         try:
             await upload.save(tmp, max_bytes=8 * 1024 * 1024)
             if tmp.stat().st_size < 256:
@@ -378,14 +582,22 @@ class CharacterAtelierPlugin(Star):
                 tmp.unlink(missing_ok=True)
             except OSError:
                 pass
-        profile = self._read_character()
+        profile = self._read_character(persona_id)
         slots = profile.setdefault("slots", {})
         slots[slot] = dest.name
-        self._write_character(profile)
-        return json_response({"ok": True, **self._character_state()})
+        self._write_character(profile, persona_id)
+        return json_response(
+            {
+                "ok": True,
+                "persona_id": persona_id,
+                "personas": await self._persona_catalog(),
+                **self._character_state(persona_id),
+            }
+        )
 
     async def api_character_image(self, slot: str = "", **kwargs):
-        path = self._character_image_path(slot)
+        persona_id = await self._request_persona_id()
+        path = self._character_image_path(slot, persona_id)
         if not path:
             return error_response("这个角度还没有上传", status_code=404)
         mime = mimetypes.guess_type(path.name)[0] or "image/png"
@@ -394,17 +606,23 @@ class CharacterAtelierPlugin(Star):
         return json_response({"ok": True, "mime": mime, "image": encoded})
 
     async def api_character_preview(self, **kwargs):
+        payload = await request.json({})
+        persona_id = await self._request_persona_id(
+            payload if isinstance(payload, dict) else None
+        )
         try:
             path, used = await self._generate(
                 "角色日常插画：站在窗边回头看向镜头，表情自然，生活感。",
                 size="768*1024",
                 style="",
-                reference_images=self._character_refs(),
+                reference_images=self._character_refs(persona_id),
+                persona_id=persona_id,
             )
             encoded = base64.b64encode(path.read_bytes()).decode("ascii")
             return json_response(
                 {
                     "ok": True,
+                    "persona_id": persona_id,
                     "provider": used,
                     "mime": "image/png",
                     "image": encoded,
@@ -652,7 +870,9 @@ class CharacterAtelierPlugin(Star):
         self._last_call[user_id] = now
         return 0.0
 
-    async def _remember_umo(self, event: AstrMessageEvent) -> None:
+    async def _remember_umo(
+        self, event: AstrMessageEvent, persona_id: str = ""
+    ) -> None:
         umo = getattr(event, "unified_msg_origin", "") or ""
         if not umo:
             return
@@ -660,7 +880,10 @@ class CharacterAtelierPlugin(Star):
             await self.put_kv_data("last_umo", str(umo))
         except Exception:  # noqa: BLE001
             logger.debug("记录 last_umo 失败", exc_info=True)
-        self._write_state(last_umo=str(umo))
+        updates: dict[str, str] = {"last_umo": str(umo)}
+        if persona_id:
+            updates["last_persona_id"] = str(persona_id)
+        self._write_state(**updates)
 
     # ------------------------------------------------------------------ local state
     def _read_state(self) -> dict:
@@ -700,11 +923,13 @@ class CharacterAtelierPlugin(Star):
         style: str = "",
         provider_name: str = "",
         reference_images: list[str] | None = None,
+        persona_id: str | None = None,
     ) -> tuple[Path, str]:
         providers = self._ordered_providers(provider_name)
         prompt_text = self._compose_prompt(prompt, style)
-        refs = self._character_refs() if reference_images is None else reference_images
-        character_prompt = self._character_prompt()
+        pid = str(persona_id or "").strip() or "default"
+        refs = self._character_refs(pid) if reference_images is None else reference_images
+        character_prompt = self._character_prompt(pid)
         if character_prompt and refs:
             prompt_text = f"{character_prompt}。{prompt_text}" if prompt_text else character_prompt
         size_text = self._normalize_size(size)
@@ -822,14 +1047,15 @@ class CharacterAtelierPlugin(Star):
             )
             return
 
-        await self._remember_umo(event)
+        persona_id = await self._resolve_persona_id(event)
+        await self._remember_umo(event, persona_id)
         await self._send_progress(
             event, str(self._cfg("progress_hint", "好，开始画了，等我一下…"))
         )
 
         try:
             path, used_provider = await self._generate(
-                prompt, size, style, provider
+                prompt, size, style, provider, persona_id=persona_id
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("生图失败：%s", exc)
@@ -930,8 +1156,12 @@ class CharacterAtelierPlugin(Star):
         text = "；".join(pieces)
         return text[:500]
 
-    def _build_schedule_prompt(self, date_str: str) -> tuple[str, dict]:
-        persona = str(self._cfg("schedule_persona_name", "助手")).strip()
+    def _build_schedule_prompt(
+        self, date_str: str, persona_id: str | None = None
+    ) -> tuple[str, dict]:
+        configured = str(self._cfg("schedule_persona_name", "助手")).strip() or "助手"
+        requested = str(persona_id or "").strip()
+        persona = requested if requested and requested != "default" else configured
         theme = "日常"
         mood = "悠闲"
         outfit = "穿着舒服的日常衣服"
@@ -995,7 +1225,9 @@ class CharacterAtelierPlugin(Star):
             date_str = datetime.now(self._tz()).date().isoformat()
 
         await self._remember_umo(event)
-        prompt, meta = self._build_schedule_prompt(date_str)
+        persona_id = await self._resolve_persona_id(event)
+        await self._remember_umo(event, persona_id)
+        prompt, meta = self._build_schedule_prompt(date_str, persona_id)
         await self._send_progress(
             event, str(self._cfg("schedule_progress_hint", "我去翻翻今天的日程，画张图给你…"))
         )
@@ -1006,6 +1238,7 @@ class CharacterAtelierPlugin(Star):
                 str(self._cfg("schedule_size", "1024*1024")),
                 str(self._cfg("schedule_style_prompt", "")),
                 provider or str(self._cfg("schedule_provider", "")),
+                persona_id=persona_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("日程生图失败：%s", exc)
@@ -1129,13 +1362,15 @@ class CharacterAtelierPlugin(Star):
         if str(last or "") == date_str:
             return
 
-        prompt, meta = self._build_schedule_prompt(date_str)
+        persona_id = self._schedule_persona_id()
+        prompt, meta = self._build_schedule_prompt(date_str, persona_id)
         try:
             path, used_provider = await self._generate(
                 prompt,
                 str(self._cfg("schedule_size", "1024*1024")),
                 str(self._cfg("schedule_style_prompt", "")),
                 str(self._cfg("schedule_provider", "")),
+                persona_id=persona_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("定时日程生图失败：%s", exc)
@@ -1186,11 +1421,13 @@ class CharacterAtelierPlugin(Star):
     async def _proactive_loop(self) -> None:
         while True:
             try:
-                profile = self._read_character()
+                state = self._read_state()
+                persona_id = str(state.get("last_persona_id") or "default")
+                profile = self._read_character(persona_id)
                 if not profile.get("proactive_enabled"):
                     await asyncio.sleep(120)
                     continue
-                if not self._character_refs():
+                if not self._character_refs(persona_id):
                     await asyncio.sleep(300)
                     continue
 
@@ -1241,6 +1478,7 @@ class CharacterAtelierPlugin(Star):
                     str(self._cfg("proactive_size", "1024*1024")),
                     str(self._cfg("proactive_style_prompt", "")),
                     str(self._cfg("proactive_provider", "")),
+                    persona_id=persona_id,
                 )
                 caption = str(
                     self._cfg("proactive_caption", "突然想给你看看这个——")

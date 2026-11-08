@@ -190,7 +190,7 @@
     "description": "日程图人格名",
     "type": "string",
     "default": "助手",
-    "hint": "用来匹配 virtual_life plans.json 里的 日期::人格 键；不用 virtual_life 可随便填。"
+    "hint": "填 AstrBot 人设 ID（如 傲娇大肥鱼），日程图会使用该人设绑定的三视图；同时用于匹配 virtual_life plans.json 的 日期::人格 键。不要用 virtual_life 时也建议填当前人设 ID，留空则用 default。"
   },
   "schedule_use_virtual_life": {
     "description": "读取 virtual_life 日程",

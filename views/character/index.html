@@ -32,6 +32,12 @@
   .sub{margin:0; color:var(--muted); font-size:14px; line-height:1.7}
   .hero-badge{display:flex; align-items:center; gap:8px; padding:9px 14px; border-radius:999px; background:rgba(255,255,255,.75); border:1px solid var(--line); box-shadow:0 6px 18px rgba(217,79,134,.08); font-size:12px; color:var(--pink-600); font-weight:700; white-space:nowrap}
   .hero-badge i{width:8px; height:8px; border-radius:50%; background:#5cc98d; box-shadow:0 0 0 4px rgba(92,201,141,.14)}
+  .persona-bar{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 18px; padding:12px 16px; background:rgba(255,255,255,.78); border:1px solid var(--line); border-radius:18px; box-shadow:0 8px 24px rgba(217,79,134,.08)}
+  .persona-bar .label{font-size:12px; font-weight:800; color:var(--pink-600); letter-spacing:.04em; white-space:nowrap}
+  .persona-bar select{min-width:220px; max-width:100%; border:1px solid #f0cfdd; background:#fffafc; border-radius:12px; padding:9px 12px; font:inherit; font-size:13px; color:var(--ink); outline:none}
+  .persona-bar select:focus{border-color:var(--pink-400); box-shadow:0 0 0 4px rgba(255,143,186,.16)}
+  .persona-bar .persona-hint{font-size:12px; color:var(--muted); line-height:1.5}
+  .persona-bar .persona-hint b{color:var(--pink-600)}
   .grid{display:grid; grid-template-columns:1.04fr .96fr; gap:20px; align-items:start}
   .card{background:rgba(255,253,254,.86); border:1px solid rgba(243,215,227,.9); border-radius:26px; box-shadow:var(--shadow); backdrop-filter:blur(10px)}
   .card-head{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:22px 24px 0}
@@ -107,6 +113,12 @@
     </div>
     <div class="hero-badge"><i></i> 参考图会随每次生图一起发送</div>
   </header>
+
+  <div class="persona-bar">
+    <span class="label">为哪个人设画角色</span>
+    <select id="personaSelect" aria-label="选择 AstrBot 人设"></select>
+    <span class="persona-hint" id="personaHint">每个人设可以绑定自己的三视图，聊天时会自动使用当前人设的角色。</span>
+  </div>
 
   <div class="grid">
     <section class="card">
@@ -224,6 +236,8 @@
   const $ = (id) => document.getElementById(id);
   const slots = ["front","side","back"];
   let profile = null;
+  let personas = [];
+  let personaId = "default";
 
   function toast(text){
     const el = $("toast");
@@ -257,8 +271,9 @@
   async function loadImage(slot){
     if (!bridge) return;
     const box = $("slot-" + slot);
+    box.classList.remove("has-img");
     try{
-      const r = await bridge.apiGet("character/image/" + slot);
+      const r = await bridge.apiGet("character/image/" + slot + "?persona=" + encodeURIComponent(personaId));
       const d = r && r.data ? r.data : r;
       if (d && d.image){
         const img = box.querySelector("img");
@@ -268,17 +283,65 @@
     }catch(e){ /* 该角度还没上传 */ }
   }
 
+  function fillPersonaSelect(list, selected){
+    personas = Array.isArray(list) ? list : [];
+    const sel = $("personaSelect");
+    sel.innerHTML = "";
+    personas.forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item.id;
+      const bits = [item.label || item.id];
+      if (item.name && item.name !== item.label) bits.push(item.name);
+      if (item.has_images) bits.push("已绑定三视图");
+      opt.textContent = bits.join(" · ");
+      sel.appendChild(opt);
+    });
+    if (!personas.length){
+      personas = [{id:"default", label:"默认（不绑定人设）"}];
+      const opt = document.createElement("option");
+      opt.value = "default"; opt.textContent = "默认（不绑定人设）";
+      sel.appendChild(opt);
+    }
+    if (selected && personas.some(item => item.id === selected)) personaId = selected;
+    else {
+      const withImages = personas.find(item => item.id !== "default" && item.has_images);
+      personaId = withImages ? withImages.id : (personas[0] ? personas[0].id : "default");
+    }
+    sel.value = personaId;
+    const current = personas.find(item => item.id === personaId);
+    $("personaHint").innerHTML = current && current.has_images
+      ? "当前人设已绑定三视图；聊天、日程图和主动画图都会自动使用它。"
+      : "当前人设还没有三视图；上传后，聊天、日程图和主动画图都会自动使用它。";
+  }
+
+  async function loadPersonas(selected){
+    if (!bridge) return;
+    try{
+      const r = await bridge.apiGet("character/personas");
+      const d = r && r.data ? r.data : r;
+      fillPersonaSelect((d && d.personas) || [], selected || "");
+    }catch(e){
+      fillPersonaSelect([], selected);
+    }
+  }
+
   async function load(){
     if (!bridge){ showNote("没有检测到 AstrBot 插件桥接，请从 AstrBot 插件页打开这个视图。", false); return; }
     try{
-      const r = await bridge.apiGet("character");
+      const r = await bridge.apiGet("character?persona=" + encodeURIComponent(personaId));
       const d = r && r.data ? r.data : r;
+      if (d && d.personas) fillPersonaSelect(d.personas, personaId);
       fillForm((d && d.profile) || {});
       slots.forEach(loadImage);
-      showNote("已读取角色设定", true);
+      showNote("已读取「" + personaLabel() + "」的角色设定", true);
     }catch(e){
       showNote("读取失败：" + (e && e.message ? e.message : e), false);
     }
+  }
+
+  function personaLabel(){
+    const item = personas.find(p => p.id === personaId);
+    return item ? (item.label || item.id) : personaId;
   }
 
   async function upload(slot, file){
@@ -287,11 +350,12 @@
     if (file.size > 8 * 1024 * 1024){ toast("图片超过 8MB，先压缩一下"); return; }
     setBusy(slot, true);
     try{
-      const r = await bridge.upload("character/upload/" + slot, file);
+      const r = await bridge.upload("character/upload/" + slot + "?persona=" + encodeURIComponent(personaId), file);
       const d = r && r.data ? r.data : r;
       if (d && d.profile) fillForm(d.profile);
+      if (d && d.personas) fillPersonaSelect(d.personas, d.persona_id || personaId);
       await loadImage(slot);
-      toast("已保存" + ({front:"正面",side:"侧面",back:"背面"}[slot] || "图片"));
+      toast("已保存" + ({front:"正面",side:"侧面",back:"背面"}[slot] || "图片") + " · " + personaLabel());
     }catch(e){
       toast("上传失败：" + (e && e.message ? e.message : e));
     }finally{ setBusy(slot, false); }
@@ -305,12 +369,13 @@
     const btn = $("sheetBtn");
     btn.disabled = true; btn.textContent = "正在识别并切分…";
     try{
-      const r = await bridge.upload("character/sheet", file);
+      const r = await bridge.upload("character/sheet?persona=" + encodeURIComponent(personaId), file);
       const d = r && r.data ? r.data : r;
       if (d && d.ok === false) throw new Error(d.message || "自动切分失败");
       if (d && d.profile) fillForm(d.profile);
+      if (d && d.personas) fillPersonaSelect(d.personas, d.persona_id || personaId);
       await Promise.all(slots.map(loadImage));
-      toast("已自动切分正 / 侧 / 背，可点单张更换");
+      toast("已为「" + personaLabel() + "」切分正 / 侧 / 背，可点单张更换");
     }catch(e){
       toast("识别失败：" + (e && e.message ? e.message : e));
     }finally{
@@ -339,6 +404,7 @@
   $("saveBtn").addEventListener("click", async () => {
     if (!bridge) return;
     const payload = {
+      persona: personaId,
       name: $("charName").value.trim(),
       description: $("charDesc").value.trim(),
       proactive_enabled: $("proactiveEnabled").checked,
@@ -354,8 +420,9 @@
       const r = await bridge.apiPost("character", payload);
       const d = r && r.data ? r.data : r;
       if (d && d.profile) fillForm(d.profile);
+      if (d && d.personas) fillPersonaSelect(d.personas, personaId);
       showNote("已保存 · " + new Date().toLocaleTimeString(), true);
-      toast("角色设定已保存");
+      toast("角色设定已保存 · " + personaLabel());
     }catch(e){
       showNote("保存失败：" + (e && e.message ? e.message : e), false);
     }finally{ $("saveBtn").disabled = false; }
@@ -368,7 +435,7 @@
     const btn = $("previewBtn");
     btn.disabled = true; btn.textContent = "画师正在落笔…";
     try{
-      const r = await bridge.apiPost("character/preview", {});
+      const r = await bridge.apiPost("character/preview", { persona: personaId });
       const d = r && r.data ? r.data : r;
       if (!d || !d.image) throw new Error("没有返回图片");
       $("previewImg").src = "data:" + (d.mime || "image/png") + ";base64," + d.image;
@@ -382,6 +449,12 @@
 
   $("clearPreview").addEventListener("click", () => $("previewWrap").classList.remove("show"));
 
+  $("personaSelect").addEventListener("change", () => {
+    personaId = $("personaSelect").value || "default";
+    $("previewWrap").classList.remove("show");
+    load();
+  });
+
   let boots = 0;
   function boot(){
     bridge = window.AstrBotPluginPage || window.AstrBotPluginView || null;
@@ -391,7 +464,9 @@
       setTimeout(boot, 80);
       return;
     }
-    load();
+    const urlPersona = new URLSearchParams(location.search).get("persona");
+    if (urlPersona) personaId = urlPersona;
+    loadPersonas(urlPersona || "").then(load);
   }
   if (document.readyState === "loading"){
     document.addEventListener("DOMContentLoaded", boot);
