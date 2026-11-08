@@ -3,4 +3,4 @@ display_name: 角色画室
 desc: 角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口和 Gemini 的多服务商生图插件，带角色三视图设定页（可整图自动切分）、LLM 工具、/画 指令、每日日程插画与主动画图。
 version: v2.3.0
 author: 花影落闲庭
-repo: ""
+repo: https://github.com/Multicolo/astrbot_plugin_character_atelier

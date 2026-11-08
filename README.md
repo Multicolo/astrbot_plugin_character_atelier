@@ -7,6 +7,7 @@
     <img alt="License" src="https://img.shields.io/badge/license-MIT-blue">
     <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
   </p>
+  <p><a href="https://github.com/Multicolo/astrbot_plugin_character_atelier">GitHub 仓库</a></p>
 </div>
 
 一个 AstrBot 生图插件：**阿里云百炼千问、OpenAI 兼容接口、Google Gemini 可以混用**。
