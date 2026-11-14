@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import base64
@@ -43,17 +43,29 @@ DEFAULT_SCHEDULE_CAPTION = (
 )
 
 DEFAULT_LLM_GUIDE = """【生图工具使用说明】
-你可以调用工具直接生成图片并发送给用户，不要说自己不能画图。
-- {tool_draw}：用户想画图、要头像/插画/表情包/场景图、说“画一张/生图/来张图”时调用。
-- {tool_schedule}：用户想看今天的日程图、今日安排插画、把今天计划画出来时调用。
-当前可用服务商：{providers}。默认尺寸 {default_size}。
-调用要点：
-1. prompt 写清主体、动作、场景、光线、构图和风格，不要写“帮我画”这类空话。
-2. size 可选，格式如 1024*1024、768*1024、1024*768；不确定就留空。
-3. provider 可选，只有用户点名服务商时才填；不确定就留空。
-4. 工具会把图直接发给用户，你只需用一两句话回应，不要重复描述画面。
-5. 工具失败时，把简短原因告诉用户，并建议换个描述或稍后再试。
-6. 如果用户已经在插件视图里上传了角色三视图，工具会自动把这些图作为参考图，保持角色长相和服装一致；不要另造一个角色。"""
+你有生图能力：调用 {tool_draw} 会直接生成图片并发给用户。不要说“我画不了”，不要用文字描述代替图片，也不要输出图片链接或假装发图。
+
+什么时候调用
+- 用户明确要图：画一张、来张图、要头像/插画/表情包/壁纸/封面 → 直接调用。
+- 用户没说要图，但话里有具体画面（“好想看看她穿婚纱的样子”）→ 值得画就直接调用；你自己撞见好看的风景（黄昏的海）→ 直接画，这种图不画人。
+- 用户只是聊天、夸图、吐槽、发表情 → 不调用。
+- 只有“画个图”这类没说画什么的空话 → 先用角色口吻反问一句，问清了再画。
+
+prompt 怎么写
+- 写清主体、动作、场景、光线、构图、风格，一到三句；不要写“帮我画”“画好看点”这类空话。
+- 尺寸不要塞进 prompt，用 size 参数：1024*1024 方图、768*1024 竖图、1024*768 横图；不确定就留空。
+- 风格按场景切换，填 style：日常生活/温柔时刻→温暖插画；旅行/风景/纪实→写实照片感；搞笑/表情包→扁平卡通；用户点了风格就用用户的。
+- 画面里要不要出现她，用 keep_character 决定：要出现 → 填 true，插件会附上三视图和角色描述，你不用写她的长相；纯风景、静物、没有人的画面 → 留空，也不要提她的名字和长相。
+- provider 只有用户点名服务商时才填，否则留空。当前可用：{providers}；默认尺寸 {default_size}。
+
+调用之后
+- 图已经发出去了。你只用一两句话回应，带情绪、像本人说话，不要复述画面里有什么，不要报尺寸和模型名。
+- 失败就简短说原因（额度、超时、内容被拒），给一条能执行的建议（换描述/换风格/稍后再试）。同一句别连着重试两次。
+
+不要画
+真人或明星的脸、露骨色情、政治敏感、血腥暴力。遇到就按角色口吻拒绝，别说教，紧接着给一个能画的替代方案（换场景、换构图、只画背影）。
+
+工具列表里的 image_schedule 不要调用；用户想看“今天过得怎么样”，用 {tool_draw} 按上下文自己画。"""
 
 SIZE_PRESETS = {
     "square": "1024*1024",
@@ -72,7 +84,7 @@ SIZE_PRESETS = {
     PLUGIN_NAME,
     "花影落闲庭",
     "角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口与 Gemini，提供 LLM 工具、/画 指令、每日日程插画、主动画图与按人设绑定的角色三视图（支持整图自动切分）。",
-    "v2.4.0",
+    "v2.5.0",
 )
 class CharacterAtelierPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None) -> None:
@@ -116,6 +128,11 @@ class CharacterAtelierPlugin(Star):
             return int(self._cfg(key, default))
         except (TypeError, ValueError):
             return default
+
+    def _reference_mode(self) -> str:
+        """三视图参考图使用策略：always / on_demand / off。"""
+        mode = str(self._cfg("reference_mode", "always")).strip().lower()
+        return mode if mode in {"always", "on_demand", "off"} else "always"
 
     def _cfg_float(self, key: str, default: float = 0.0) -> float:
         try:
@@ -245,6 +262,15 @@ class CharacterAtelierPlugin(Star):
             return None
         path = self._persona_dir(persona_id) / Path(filename).name
         return path if path.is_file() else None
+
+    def _auto_refs(self, persona_id: str | None = None, keep_character: bool = False) -> list[str]:
+        """按 reference_mode 决定本次是否附带三视图参考图。"""
+        mode = self._reference_mode()
+        if mode == "off":
+            return []
+        if mode == "on_demand" and not keep_character:
+            return []
+        return self._character_refs(persona_id)
 
     def _character_refs(self, persona_id: str | None = None) -> list[str]:
         refs: list[str] = []
@@ -924,13 +950,20 @@ class CharacterAtelierPlugin(Star):
         provider_name: str = "",
         reference_images: list[str] | None = None,
         persona_id: str | None = None,
+        keep_character: bool = False,
     ) -> tuple[Path, str]:
         providers = self._ordered_providers(provider_name)
         prompt_text = self._compose_prompt(prompt, style)
         pid = str(persona_id or "").strip() or "default"
-        refs = self._character_refs(pid) if reference_images is None else reference_images
-        character_prompt = self._character_prompt(pid)
-        if character_prompt and refs:
+        refs = (
+            reference_images
+            if reference_images is not None
+            else self._auto_refs(pid, keep_character)
+        )
+        mode = self._reference_mode()
+        use_character = bool(refs) or keep_character or mode == "off"
+        character_prompt = self._character_prompt(pid) if use_character else ""
+        if character_prompt:
             prompt_text = f"{character_prompt}。{prompt_text}" if prompt_text else character_prompt
         size_text = self._normalize_size(size)
         negative_prompt = str(self._cfg("negative_prompt", ""))
@@ -1025,6 +1058,7 @@ class CharacterAtelierPlugin(Star):
         size: str = "",
         style: str = "",
         provider: str = "",
+        keep_character: bool = False,
         source: str = "command",
     ) -> AsyncGenerator:
         if not self._cfg_bool("enabled", True):
@@ -1036,14 +1070,21 @@ class CharacterAtelierPlugin(Star):
             yield f"别急，{remaining:.0f} 秒后再画。"
             return
 
-        prompt, flag_size, flag_style, flag_provider = self._parse_flags(raw_prompt)
+        raw_text = str(raw_prompt or "")
+        keep = bool(keep_character) or any(
+            flag in raw_text for flag in ("--角色", "--keep", "--ref")
+        )
+        for flag in ("--角色", "--keep", "--ref"):
+            raw_text = raw_text.replace(flag, " ")
+
+        prompt, flag_size, flag_style, flag_provider = self._parse_flags(raw_text)
         size = size or flag_size
         style = style or flag_style
         provider = provider or flag_provider
         if not prompt:
             yield (
                 "想画什么？用法：/画 一只在窗台晒太阳的橘猫 "
-                "[--size 768*1024] [--style 水彩] [--provider 服务商名]"
+                "[--size 768*1024] [--style 水彩] [--provider 服务商名] [--角色]"
             )
             return
 
@@ -1055,7 +1096,12 @@ class CharacterAtelierPlugin(Star):
 
         try:
             path, used_provider = await self._generate(
-                prompt, size, style, provider, persona_id=persona_id
+                prompt,
+                size,
+                style,
+                provider,
+                persona_id=persona_id,
+                keep_character=keep,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("生图失败：%s", exc)
@@ -1239,6 +1285,7 @@ class CharacterAtelierPlugin(Star):
                 str(self._cfg("schedule_style_prompt", "")),
                 provider or str(self._cfg("schedule_provider", "")),
                 persona_id=persona_id,
+                keep_character=True,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("日程生图失败：%s", exc)
@@ -1371,6 +1418,7 @@ class CharacterAtelierPlugin(Star):
                 str(self._cfg("schedule_style_prompt", "")),
                 str(self._cfg("schedule_provider", "")),
                 persona_id=persona_id,
+                keep_character=True,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("定时日程生图失败：%s", exc)
@@ -1427,7 +1475,14 @@ class CharacterAtelierPlugin(Star):
                 if not profile.get("proactive_enabled"):
                     await asyncio.sleep(120)
                     continue
-                if not self._character_refs(persona_id):
+                if not (
+                    str(profile.get("name") or "").strip()
+                    or str(profile.get("description") or "").strip()
+                    or any(
+                        self._character_image_path(slot, persona_id)
+                        for slot in self.CHARACTER_SLOTS
+                    )
+                ):
                     await asyncio.sleep(300)
                     continue
 
@@ -1479,6 +1534,7 @@ class CharacterAtelierPlugin(Star):
                     str(self._cfg("proactive_style_prompt", "")),
                     str(self._cfg("proactive_provider", "")),
                     persona_id=persona_id,
+                    keep_character=True,
                 )
                 caption = str(
                     self._cfg("proactive_caption", "突然想给你看看这个——")
@@ -1532,8 +1588,20 @@ class CharacterAtelierPlugin(Star):
             lines.append(f"{item.name}{mark}[{item.type}/{item.model}]")
         return "、".join(lines)
 
+    def _guide_template(self) -> str:
+        """builtin：始终用内置提示词（更新插件即更新提示词）；custom：用配置里的自定义版本。"""
+        source = str(self._cfg("llm_guide_source", "builtin")).strip().lower()
+        if source == "custom":
+            configured = str(self._cfg("llm_guide_text", "") or "").strip()
+            if configured:
+                return configured
+            logger.warning(
+                "llm_guide_source=custom 但 llm_guide_text 为空，已回退到内置提示词"
+            )
+        return DEFAULT_LLM_GUIDE
+
     def _build_llm_guide(self) -> str:
-        template = str(self._cfg("llm_guide_text", DEFAULT_LLM_GUIDE)).strip()
+        template = self._guide_template()
         if not template:
             return ""
         tool_draw = "image_draw"
@@ -1643,6 +1711,7 @@ class CharacterAtelierPlugin(Star):
         size: str = "",
         style: str = "",
         provider: str = "",
+        keep_character: bool = False,
     ):
         """根据文字描述生成一张图片，并直接发送给用户。当用户说“画一张…”“生图”“来张图”“给我画…”，或者想要头像、插画、表情包、场景图时调用。
 
@@ -1651,9 +1720,16 @@ class CharacterAtelierPlugin(Star):
             size(string): 可选尺寸，例如 1024*1024、768*1024、1024*768；留空使用默认值。
             style(string): 可选风格，例如 水彩、二次元、写实、像素风；留空使用默认风格。
             provider(string): 可选服务商名称；只有用户点名服务商时才填，留空使用默认服务商。
+            keep_character(bool): 是否强制附带角色三视图参考图；用户要求“保持角色长相/还是她”时填 true，其余留空。
         """
         async for item in self._handle_draw(
-            event, prompt, size, style, provider, source="tool"
+            event,
+            prompt,
+            size,
+            style,
+            provider,
+            keep_character=keep_character,
+            source="tool",
         ):
             yield item
 

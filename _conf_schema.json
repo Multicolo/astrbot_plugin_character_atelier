@@ -5,6 +5,12 @@
     "default": true,
     "hint": "关闭后 /画、LLM 工具和定时日程图都不会生成图片。"
   },
+  "reference_mode": {
+    "description": "三视图参考图使用方式",
+    "type": "string",
+    "default": "always",
+    "hint": "always：每次生图都附带三视图参考图和角色描述（角色最稳，但纯风景图也会被塞进角色）；on_demand：默认当成纯场景图，不带参考图也不加角色描述，只有用户说「保持角色」、/画 --角色 或工具传 keep_character 时才带；off：从不带参考图，但角色描述始终附加。想「有时画纯风景、有时画角色」就选 on_demand。"
+  },
   "providers_json": {
     "description": "服务商列表（JSON）",
     "type": "string",
@@ -274,10 +280,16 @@
     "default": true,
     "hint": "开启后角色会知道什么时候调用生图工具、有哪些服务商；会占用少量上下文。"
   },
-  "llm_guide_text": {
-    "description": "生图用法提示词",
+  "llm_guide_source": {
+    "description": "提示词来源",
     "type": "string",
-    "default": "【生图工具使用说明】\n你可以调用工具直接生成图片并发送给用户，不要说自己不能画图。\n- {tool_draw}：用户想画图、要头像/插画/表情包/场景图、说“画一张/生图/来张图”时调用。\n- {tool_schedule}：用户想看今天的日程图、今日安排插画、把今天计划画出来时调用。\n当前可用服务商：{providers}。默认尺寸 {default_size}。\n调用要点：\n1. prompt 写清主体、动作、场景、光线、构图和风格，不要写“帮我画”这类空话。\n2. size 可选，格式如 1024*1024、768*1024、1024*768；不确定就留空。\n3. provider 可选，只有用户点名服务商时才填；不确定就留空。\n4. 工具会把图直接发给用户，你只需用一两句话回应，不要重复描述画面。\n5. 工具失败时，把简短原因告诉用户，并建议换个描述或稍后再试。",
-    "hint": "可用占位符：{providers} {default_size} {tool_draw} {tool_schedule}。留空则不注入。"
+    "default": "builtin",
+    "hint": "builtin：用插件内置的提示词（更新插件即自动更新提示词，推荐）；custom：用下面填写的自定义版本。注意：选 builtin 时下面的文本框会被忽略。"
+  },
+  "llm_guide_text": {
+    "description": "自定义生图用法提示词",
+    "type": "string",
+    "default": "",
+    "hint": "仅当「提示词来源」为 custom 且这里非空时生效。可用占位符：{providers} {default_size} {tool_draw}。留空或用 builtin 时走内置版本。"
   }
 }

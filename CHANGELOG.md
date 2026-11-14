@@ -1,5 +1,15 @@
 # 更新日志
 
+## v2.5.0 — 提示词随版本走 + 参考图开关
+
+- 新增：`llm_guide_source` 配置（`builtin` / `custom`），默认 `builtin`。内置提示词随插件版本更新，更新插件即更新提示词，不必再手动粘贴；想自己改就切到 `custom`。
+- 变更：内置生图提示词重写，明确触发条件、`keep_character` 语义、自主画纯风景、失败处理与四条红线。
+- 变更：`llm_guide_text` 默认改为空，仅当 `llm_guide_source=custom` 时生效；旧配置里的文本在 `builtin` 下不再覆盖内置版本。
+- 新增：`reference_mode` 配置（`always` / `on_demand` / `off`），控制三视图参考图是否随每次生图发送；`on_demand` 下人物图才带参考图，纯风景图不带。
+- 新增：工具 `image_draw(keep_character)` 与命令 `/画 --角色`，用于在 `on_demand` 下按需附带角色。
+- 修复：角色描述不再依赖参考图存在，`off` / `on_demand` 下文字描述依然生效。
+- 修复：主动画图不再因「没有参考图」静默空转；主动画图与日程图现在强制带角色，避免退化成空镜。
+
 ## v2.4.0 — 按人设绑定角色
 
 - 新增：角色三视图按 AstrBot 人设分开保存，一个人设一套角色，不再共用同一份 `profile.json`。
