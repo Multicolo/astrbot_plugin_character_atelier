@@ -55,6 +55,7 @@ prompt 怎么写
 - 写清主体、动作、场景、光线、构图、风格，一到三句；不要写“帮我画”“画好看点”这类空话。
 - 尺寸不要塞进 prompt，用 size 参数：1024*1024 方图、768*1024 竖图、1024*768 横图；不确定就留空。
 - 风格按场景切换，填 style：日常生活/温柔时刻→温暖插画；旅行/风景/纪实→写实照片感；搞笑/表情包→扁平卡通；用户点了风格就用用户的。
+- 描述要具体到能拍：光从哪来、东西旧不旧、手在做什么；不要写“8k、masterpiece、超精细、大片感”这类堆词，也不要让画面太干净太满——那是最典型的 AI 味。
 - 画面里要不要出现她，用 keep_character 决定：要出现 → 填 true，插件会附上三视图和角色描述，你不用写她的长相；纯风景、静物、没有人的画面 → 留空，也不要提她的名字和长相。
 - provider 只有用户点名服务商时才填，否则留空。当前可用：{providers}；默认尺寸 {default_size}。
 
@@ -66,6 +67,23 @@ prompt 怎么写
 真人或明星的脸、露骨色情、政治敏感、血腥暴力。遇到就按角色口吻拒绝，别说教，紧接着给一个能画的替代方案（换场景、换构图、只画背影）。
 
 工具列表里的 image_schedule 不要调用；用户想看“今天过得怎么样”，用 {tool_draw} 按上下文自己画。"""
+
+DEFAULT_SCENERY_SCENES = """清晨海雾里的木栈道，浪声很轻
+黄昏的海面，光铺成一条路
+雨打在窗玻璃上，屋里亮着一盏灯
+礁石缝里的小水洼，映着天空
+深夜的星空和海平线
+晾在屋外的床单被风吹起来
+灶台上冒着热气的水壶
+窗台上晒着的贝壳和玻璃瓶
+涨潮时的防波堤，白色浪花碎开
+海边的野花和旧木栅栏
+船坞里停着的小木船
+午后阳光斜进屋子，落在木地板上"""
+
+DEFAULT_SCENERY_STYLE = (
+    "手机随手拍的自然光照片，轻微噪点，构图随意，色彩偏淡，不要精修和滤镜感"
+)
 
 SIZE_PRESETS = {
     "square": "1024*1024",
@@ -84,7 +102,7 @@ SIZE_PRESETS = {
     PLUGIN_NAME,
     "花影落闲庭",
     "角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口与 Gemini，提供 LLM 工具、/画 指令、每日日程插画、主动画图与按人设绑定的角色三视图（支持整图自动切分）。",
-    "v2.5.0",
+    "v2.5.1",
 )
 class CharacterAtelierPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None) -> None:
@@ -1518,23 +1536,49 @@ class CharacterAtelierPlugin(Star):
                     continue
 
                 scenes = profile.get("proactive_scenes") or []
-                scene = random.choice(
-                    scenes
-                    or [
-                        "坐在窗台晒太阳，旁边放着一杯柠檬水",
-                        "在厨房里笨手笨脚地做早餐",
-                    ]
+                scenery_pool = [
+                    line.strip()
+                    for line in (
+                        str(self._cfg("proactive_scenery_scenes", "") or "").strip()
+                        or DEFAULT_SCENERY_SCENES
+                    ).splitlines()
+                    if line.strip()
+                ]
+                scenery = bool(
+                    scenery_pool
+                    and self._cfg_bool("proactive_mix_scenery", False)
+                    and random.random() < 0.5
                 )
-                prompt = (
-                    f"角色日常照片：{scene}。自然抓拍感，生活化，不要摆拍，不要文字水印。"
-                )
+                if scenery:
+                    scene = random.choice(scenery_pool)
+                    prompt = (
+                        f"生活场景照片：{scene}。自然抓拍感，画面里不要出现人，"
+                        "不要人物剪影，不要文字水印。"
+                    )
+                    style = str(
+                        self._cfg("proactive_scenery_style_prompt", DEFAULT_SCENERY_STYLE)
+                    )
+                    keep = False
+                else:
+                    scene = random.choice(
+                        scenes
+                        or [
+                            "坐在窗台晒太阳，旁边放着一杯柠檬水",
+                            "在厨房里笨手笨脚地做早餐",
+                        ]
+                    )
+                    prompt = (
+                        f"角色日常照片：{scene}。自然抓拍感，生活化，不要摆拍，不要文字水印。"
+                    )
+                    style = str(self._cfg("proactive_style_prompt", ""))
+                    keep = True
                 path, used = await self._generate(
                     prompt,
                     str(self._cfg("proactive_size", "1024*1024")),
-                    str(self._cfg("proactive_style_prompt", "")),
+                    style,
                     str(self._cfg("proactive_provider", "")),
                     persona_id=persona_id,
-                    keep_character=True,
+                    keep_character=keep,
                 )
                 caption = str(
                     self._cfg("proactive_caption", "突然想给你看看这个——")

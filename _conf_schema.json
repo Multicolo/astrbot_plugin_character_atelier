@@ -85,14 +85,14 @@
   "style_prompt": {
     "description": "默认画风",
     "type": "string",
-    "default": "温暖可爱的插画风格，柔和光线，细腻笔触",
+    "default": "生活化的手绘插画，柔和自然光，轻微纸张纹理，笔触不均匀，色彩偏灰，构图放松",
     "hint": "会追加到每次聊天生图的描述后面；用户在指令里用 --style 可覆盖。"
   },
   "negative_prompt": {
     "description": "负面提示词",
     "type": "string",
-    "default": "",
-    "hint": "例如 低清晰度、畸形、多余手指；留空不传。"
+    "default": "塑料质感、过度光滑的皮肤、CG渲染、3D模型感、油腻高光、完美对称、高饱和、荧光色、锐利HDR、文字、水印、签名、logo、多余手指、畸形肢体、低清晰度",
+    "hint": "只对 send_negative_prompt=true 的服务商生效；这组词的主要作用是压掉 AI 味的塑料感。"
   },
   "watermark": {
     "description": "添加水印",
@@ -259,9 +259,26 @@
     "default": "1024*1024"
   },
   "proactive_style_prompt": {
-    "description": "主动画图画风",
+    "description": "主动画图画风（有角色）",
     "type": "string",
-    "default": "像一张随手拍的生活照片，自然光，轻微颗粒感，真实生活氛围"
+    "default": "像手机随手拍的照片，自然光，轻微噪点和胶片颗粒，构图有点歪，生活痕迹重，不要精修和滤镜"
+  },
+  "proactive_mix_scenery": {
+    "description": "主动画图混入纯风景",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后每次主动画图有约一半概率画纯风景（不带角色、不带参考图），另一半仍画角色日常。"
+  },
+  "proactive_scenery_scenes": {
+    "description": "纯风景场景列表",
+    "type": "string",
+    "default": "清晨海雾里的木栈道，浪声很轻\n黄昏的海面，光铺成一条路\n雨打在窗玻璃上，屋里亮着一盏灯\n礁石缝里的小水洼，映着天空\n深夜的星空和海平线\n晾在屋外的床单被风吹起来\n灶台上冒着热气的水壶\n窗台上晒着的贝壳和玻璃瓶\n涨潮时的防波堤，白色浪花碎开\n海边的野花和旧木栅栏\n船坞里停着的小木船\n午后阳光斜进屋子，落在木地板上",
+    "hint": "每行一条，只在主动画图抽到风景时使用。"
+  },
+  "proactive_scenery_style_prompt": {
+    "description": "主动画图画风（纯风景）",
+    "type": "string",
+    "default": "手机随手拍的自然光照片，轻微噪点，构图随意，色彩偏淡，不要精修和滤镜感"
   },
   "proactive_provider": {
     "description": "主动画图指定服务商",
