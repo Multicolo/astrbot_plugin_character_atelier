@@ -102,7 +102,7 @@ SIZE_PRESETS = {
     PLUGIN_NAME,
     "花影落闲庭",
     "角色画室 · 多模型生图：支持阿里云百炼千问、OpenAI 兼容接口与 Gemini，提供 LLM 工具、/画 指令、每日日程插画、主动画图与按人设绑定的角色三视图（支持整图自动切分）。",
-    "v2.5.2",
+    "v2.5.3",
 )
 class CharacterAtelierPlugin(Star):
     def __init__(self, context: Context, config: dict | None = None) -> None:

@@ -1,4 +1,4 @@
-{
+﻿{
   "enabled": {
     "description": "启用角色画室",
     "type": "bool",
@@ -6,9 +6,9 @@
     "hint": "关闭后 /画、LLM 工具和定时日程图都不会生成图片。"
   },
   "reference_mode": {
-    "description": "三视图参考图使用方式",
-    "type": "string",
-    "default": "always",
+      "description": "三视图参考图使用方式",
+      "type": "string",
+      "default": "on_demand",
     "hint": "always：每次生图都附带三视图参考图和角色描述（角色最稳，但纯风景图也会被塞进角色）；on_demand：默认当成纯场景图，不带参考图也不加角色描述，只有用户说「保持角色」、/画 --角色 或工具传 keep_character 时才带；off：从不带参考图，但角色描述始终附加。想「有时画纯风景、有时画角色」就选 on_demand。"
   },
   "providers_json": {
@@ -171,9 +171,9 @@
     "default": "画好啦，看看这张怎么样～"
   },
   "schedule_enabled": {
-    "description": "启用每日日程生图",
-    "type": "bool",
-    "default": true
+      "description": "启用每日日程生图",
+      "type": "bool",
+      "default": false
   },
   "schedule_time": {
     "description": "每日日程生图时间",
@@ -264,9 +264,9 @@
     "default": "像手机随手拍的照片，自然光，轻微噪点和胶片颗粒，构图有点歪，生活痕迹重，不要精修和滤镜"
   },
   "proactive_mix_scenery": {
-    "description": "主动画图混入纯风景",
-    "type": "bool",
-    "default": false,
+      "description": "主动画图混入纯风景",
+      "type": "bool",
+      "default": true,
     "hint": "开启后每次主动画图有约一半概率画纯风景（不带角色、不带参考图），另一半仍画角色日常。"
   },
   "proactive_scenery_scenes": {
@@ -310,3 +310,4 @@
     "hint": "仅当「提示词来源」为 custom 且这里非空时生效。可用占位符：{providers} {default_size} {tool_draw}。留空或用 builtin 时走内置版本。"
   }
 }
+
